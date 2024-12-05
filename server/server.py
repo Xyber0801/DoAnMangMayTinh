@@ -1,6 +1,8 @@
 import socket
 import client
 import threading
+import struct
+import hashlib
 
 class Server:
     def __init__(self, ip = 'localhost', port = 54321, max_clients_num = 100, sockets_per_client = 4):
@@ -42,6 +44,18 @@ class Server:
         print(f"Client {client.id} has been added to the clients list")
         self.send_list_of_files(client.sockets[0])
 
+    def create_packet(self, index, payload):
+        chunk_size = len(payload)
+        checksum = payload
+        hash = hashlib.blake2s(digest_size=16)
+        hash.update(checksum)
+        checksum = hash.digest()
+
+        header = struct.pack('<B I 16s', index, chunk_size, checksum)
+
+        return header + payload
+
+
     def handle_client(self, client):
         client.being_handled = True # Prevent other threads from handling the same client
 
@@ -67,12 +81,18 @@ class Server:
                     file_size = len(file.read())
                     chunk_size = file_size // self.sockets_per_client
                     file.seek(0)
+
+                    packets = []
+                    for i in range(self.sockets_per_client):
+                        chunk = file.read(chunk_size)
+                        packet = self.create_packet(i, chunk)
+                        packets.append(packet)
                     
-                    client.sockets[0].send(str(chunk_size).encode()) # Send chunk size to the client
+                    # client.sockets[0].send(str(chunk_size).encode()) # Send chunk size to the client
 
                     threads = [] # List of threads, each thread sends a chunk to a client
-                    for _socket in client.sockets:
-                        thread = threading.Thread(target = self.send_file, args = (_socket, file, chunk_size))
+                    for i in range(len(client.sockets)):
+                        thread = threading.Thread(target = self.send_file, args = (client.sockets[i], packets[i]))
                         threads.append(thread)
                         thread.start()
 
@@ -81,13 +101,9 @@ class Server:
 
                     print(f"File {data} has been sent to client {client.id}")
 
-    def send_file(self, client_socket, file, chunk_size):
-        while True:
-            with self.lock: # Lock the file to prevent other threads from reading it
-                data = file.read(chunk_size);
-            if not data:
-                break
-            client_socket.sendall(data)
+    def send_file(self, client_socket, file):
+        
+        client_socket.sendall(file)
 
     def __del__(self):
         self.socket.close()

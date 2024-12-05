@@ -3,6 +3,7 @@ import threading
 import os
 import sys
 import random
+import struct
 
 class Client:
     def  __init__(self,  server_addr = ('localhost', 12345), socket_count = 4):
@@ -49,8 +50,11 @@ class Client:
             sys.stdout.flush()
 
     def receive_chunk(self, index):
+        header = self.sockets[index].recv(21);
+        chunk_index, chunk_size, checksum = struct.unpack('<B I 16s', header)
+
         with open(f"received_{index}.zip", "wb") as f:
-            remaining = self.chunk_size
+            remaining = chunk_size
             while remaining > 0:
                 chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
                 # chunk = client_sockets[index].recv(chunk_sizes[index]) # Use this for production
@@ -60,18 +64,11 @@ class Client:
                 remaining -= len(chunk)
                 
                 with threading.Lock():
-                    self.progresses[index] = (self.chunk_size - remaining) / self.chunk_size * 100
+                    self.progresses[index] = (chunk_size - remaining) / chunk_size * 100
                 self.print_progress()
 
     def receive_file(self):
         try:
-            for i in range(4):
-                data = int(self.sockets[i].recv(1024).decode()) # Receive the chunk size
-                if data:
-                    print(f"Received chunk size: {data}")
-                    self.chunk_size = data
-                    break
-
             threads = [] # List of threads, each thread receives a chunk
             for i in range(4):
                 thread = threading.Thread(target=self.receive_chunk, args=(i,))
