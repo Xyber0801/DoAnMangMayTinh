@@ -3,6 +3,7 @@ import client
 import threading
 import struct
 import hashlib
+import select
 
 class Server:
     def __init__(self, ip = 'localhost', port = 54321, max_clients_num = 100, sockets_per_client = 4):
@@ -63,15 +64,17 @@ class Server:
             if len(client.sockets) < self.sockets_per_client:
                 continue
 
-            for client_socket in client.sockets:
-                data = client_socket.recv(1024).decode(); # Receive filename or exit command
+            ready_to_read, _, _ = select.select(client.sockets, [], [], 0.1)
+            for client_socket in ready_to_read:
+                data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
                 if not data:
                     continue
+
+                # print(data + "\n") # debug
 
                 if data == "exit":
                     print(f"Client {client.id} has disconnected!")
                     self.clients.remove(client)
-                    del client
                     return
 
                 # Send the file to the client
