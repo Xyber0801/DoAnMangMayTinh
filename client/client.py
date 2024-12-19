@@ -4,7 +4,7 @@ import os
 import sys
 import random
 import struct
-import queue
+import hashlib
 import time
 
 class Client:
@@ -93,25 +93,44 @@ class Client:
 
     def send_file_request(self, filename):
         print(f"Requesting file: {filename}")
-        self.sockets[0].sendall((filename + '\n').encode())
+        self.sockets[0].sendall(f"get {filename}\n".encode())
 
+    # Kiểm tra lỗi gói tin
+    def check_corrupt(self, server_checksum, received_chunk):
+        hash = hashlib.blake2s(digest_size=16)
+        client_checksum = received_chunk
+        hash.update(client_checksum)
+        client_checksum = hash.digest()
+        return (server_checksum != client_checksum)
+
+    # Cập nhật lại hàm nhận gói tin từ server
     def receive_chunk(self, index, filename):
-        header = self.sockets[index].recv(21);
-        chunk_index, chunk_size, checksum = struct.unpack('<B I 16s', header)
+        while True:
+            accumulated_chunk = b''
 
-        with open(f"{filename}.chk{index}", "wb") as f:
+            header = self.sockets[index].recv(21)
+            chunk_index, chunk_size, checksum = struct.unpack('<B I 16s', header)
+
             remaining = chunk_size
+
             while remaining > 0:
-                chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
-                # chunk = client_sockets[index].recv(chunk_sizes[index]) # Use this for production
+                # chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
+                chunk = self.sockets[index].recv(remaining) # Use this for production
                 if not chunk:
                     break
-                f.write(chunk)
+                accumulated_chunk += chunk
                 remaining -= len(chunk)
-                
                 with threading.Lock():
                     self.progresses[index] = (chunk_size - remaining) / chunk_size * 100
                 self.print_progress()
+
+            if self.check_corrupt(checksum, accumulated_chunk):
+                self.sockets[index].send(f"getchunk {chunk_index}".encode())
+                continue
+            else:
+                with open(f"{filename}.chk{index}", "wb") as f:
+                    f.write(accumulated_chunk)
+                break
 
     def receive_file(self, filename):
         try:
@@ -135,6 +154,9 @@ class Client:
                 os.remove(f"{filename}.chk{i}")
 
             print(f"\n{filename} is downloaded.")
+
+            # Send ACK to the server
+            self.sockets[0].send("ACK".encode())
 
         except KeyboardInterrupt:
             print("\nClient is shutting down...")
