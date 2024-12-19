@@ -12,7 +12,7 @@ def __main__():
     except Exception as e:
         _server = server.Server(port = 12345)
 
-    while True:
+    while not _server.stop_event.is_set():
         try:
             # Accept connections and handle them
             _server.accept_connections()
@@ -33,7 +33,9 @@ def __main__():
 
         except KeyboardInterrupt:
             print("\nServer is shutting down....")
-            exit(0)
+            _server.stop_event.set()
+            break
+
 
 if __name__ == "__main__":
     __main__()

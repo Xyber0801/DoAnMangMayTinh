@@ -11,6 +11,7 @@ class Server:
         self.sockets_per_client = sockets_per_client
         self.clients = []
         self.lock = threading.Lock()
+        self.stop_event = threading.Event()
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((ip, port))
@@ -60,83 +61,93 @@ class Server:
     def handle_client(self, client):
         client.being_handled = True # Prevent other threads from handling the same client
 
-        while True:
-            if len(client.sockets) < self.sockets_per_client:
-                continue
-
-            ready_to_read, _, _ = select.select(client.sockets, [], [], 0.1)
-            for client_socket in ready_to_read:
-                data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
-                if not data:
+        try:
+            while not self.stop_event.is_set():
+                if len(client.sockets) < self.sockets_per_client:
                     continue
 
-                print(f"(out)received '{data}'") # debug
+                ready_to_read, _, _ = select.select(client.sockets, [], [], 0.1)
+                for client_socket in ready_to_read:
+                    data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
+                    if not data:
+                        continue
 
-                if data == "exit":
-                    print(f"Client {client.id} has disconnected!")
-                    self.clients.remove(client)
-                    return
+                    print(f"(out)received '{data}'") # debug
 
-                # Send the file to the client
-                requested_file = None
-                if data.startswith("get "):
-                    requested_file = data.split()[1]
-                    print(f"Client {client.id} requested file: {data}")
+                    if data == "exit":
+                        print(f"Client {client.id} has disconnected!")
+                        self.clients.remove(client)
+                        return
 
-                with open(f'{requested_file}', 'rb') as file:
-                    file_size = len(file.read())
-                    chunk_size = file_size // self.sockets_per_client
-                    file.seek(0)
+                    # Send the file to the client
+                    requested_file = None
+                    if data.startswith("get "):
+                        requested_file = data.split()[1]
+                        print(f"Client {client.id} requested file: {data}")
 
-                    packets = []
-                    for i in range(self.sockets_per_client):
-                        chunk = file.read(chunk_size)
-                        packet = self.create_packet(i, chunk)
-                        packets.append(packet)
-                    
-                    # client.sockets[0].send(str(chunk_size).encode()) # Send chunk size to the client
+                    with open(f'{requested_file}', 'rb') as file:
+                        file_size = len(file.read())
+                        chunk_size = file_size // self.sockets_per_client
+                        file.seek(0)
 
-                    threads = [] # List of threads, each thread sends a chunk to a client
-                    for i in range(len(client.sockets)):
-                        thread = threading.Thread(target = self.send_file, args = (client.sockets[i], packets[i]))
-                        threads.append(thread)
-                        thread.start()
-
-                    for thread in threads:
-                        thread.join()
-
-                    # Listen for potential retranmissions from the client
-                    while True:
-                        ready_to_read, _, _ = select.select(client.sockets, [], [], 0.1)
-                        file_sent_successfully = False
-                        for client_socket in ready_to_read:
-                            data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
-                            if not data:
-                                continue
-                            print(f"received '{data}'") # debug
-
-                            if data == "exit":
-                                print(f"Client {client.id} has disconnected!")
-                                self.clients.remove(client)
-                                return
-                            
-                            if data == "ACK":
-                                print(f"File {requested_file} has been sent to client {client.id}")
-                                file_sent_successfully = True
-                                break
-
-                            if data.startswith("getchunk"):
-                                chunk_index = int(data.split()[1])
-                                print(f"Client {client.id} requested retransmission of chunk {chunk_index}")
-                                thread = threading.Thread(target=self.send_file, args=(client.sockets[chunk_index], packets[chunk_index]))
-                                thread.start()
-                                thread.join()
-
-                        if file_sent_successfully:
-                            break
+                        packets = []
+                        for i in range(self.sockets_per_client):
+                            chunk = file.read(chunk_size)
+                            packet = self.create_packet(i, chunk)
+                            packets.append(packet)
                         
-                    for thread in threads:
-                        threads.remove(thread)
+                        # client.sockets[0].send(str(chunk_size).encode()) # Send chunk size to the client
+
+                        threads = [] # List of threads, each thread sends a chunk to a client
+                        for i in range(len(client.sockets)):
+                            thread = threading.Thread(target = self.send_file, args = (client.sockets[i], packets[i]))
+                            threads.append(thread)
+                            thread.start()
+
+                        try:
+                            for thread in threads:
+                                thread.join()
+                        except KeyboardInterrupt:
+                            self.stop_event.set()
+                            return
+
+                        # Listen for potential retranmissions from the client
+                        while not self.stop_event.is_set():
+                            ready_to_read, _, _ = select.select(client.sockets, [], [], 0.1)
+                            file_sent_successfully = False
+                            for client_socket in ready_to_read:
+                                data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
+                                if not data:
+                                    continue
+                                print(f"received '{data}'") # debug
+
+                                if data == "exit":
+                                    print(f"Client {client.id} has disconnected!")
+                                    self.clients.remove(client)
+                                    return
+                                
+                                if data == "ACK":
+                                    print(f"File {requested_file} has been sent to client {client.id}")
+                                    file_sent_successfully = True
+                                    break
+
+                                if data.startswith("getchunk"):
+                                    chunk_index = int(data.split()[1])
+                                    print(f"Client {client.id} requested retransmission of chunk {chunk_index}")
+                                    thread = threading.Thread(target=self.send_file, args=(client.sockets[chunk_index], packets[chunk_index]))
+                                    thread.start()
+                                    thread.join()
+
+                            if file_sent_successfully:
+                                break
+                            
+                        for thread in threads:
+                            threads.remove(thread)
+        except Exception as e:
+            if isinstance(e, KeyboardInterrupt):
+                self.stop_event.set()
+            else:
+                print(e)
         
     def send_file(self, client_socket, file):
         client_socket.sendall(file)

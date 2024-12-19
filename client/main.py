@@ -31,7 +31,7 @@ def __main__():
         time.sleep(1) #Sleep for a second to let the client shut down (all threads to finish)
     except KeyboardInterrupt:
         pass
-    print("\nClient shutted down.")
+    print("\nClient has shut down.")
     
 
 if __name__ == '__main__':

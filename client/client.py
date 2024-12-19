@@ -119,8 +119,8 @@ class Client:
                 remaining = chunk_size
 
                 while remaining > 0:
-                    chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
-                    # chunk = self.sockets[index].recv(remaining) # Use this for production
+                    # chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
+                    chunk = self.sockets[index].recv(remaining) # Use this for production
                     if not chunk:
                         break
                     accumulated_chunk += chunk
