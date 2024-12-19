@@ -18,6 +18,7 @@ class Client:
         self.file_queue = []
 
         self.lock = threading.Lock()
+        self.stop_event = threading.Event()
 
         for i in range(self.socket_count):
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -33,7 +34,7 @@ class Client:
         interval = 5;
         run = True;
         readFilesCount = 0;
-        while True:
+        while not self.stop_event.is_set():
             try:
                 with open(file_path, "r") as file:
                     for i in range(readFilesCount):
@@ -56,8 +57,7 @@ class Client:
                         break;
                     time.sleep(0.1);
             except KeyboardInterrupt:
-                print("\nClient is shutting down...")
-                self.exit()
+                self.stop_event.set()
                 
 
     def receive_list_of_files(self):
@@ -78,7 +78,7 @@ class Client:
             sys.stdout.flush()
 
     def download_files(self):
-        while True:
+        while not self.stop_event.is_set():
             try:    
                 if len(self.file_queue) == 0:
                     continue
@@ -87,8 +87,11 @@ class Client:
                 self.send_file_request(file_name)
                 self.receive_file(file_name)
 
-            except KeyboardInterrupt:
-                self.exit();
+            except Exception as e:
+                if isinstance(e, KeyboardInterrupt):
+                    self.stop_event.set()
+                else:
+                    continue
 
 
     def send_file_request(self, filename):
@@ -96,7 +99,7 @@ class Client:
         self.sockets[0].sendall(f"get {filename}\n".encode())
 
     # Kiểm tra lỗi gói tin
-    def check_corrupt(self, server_checksum, received_chunk):
+    def is_corrupt(self, server_checksum, received_chunk):
         hash = hashlib.blake2s(digest_size=16)
         client_checksum = received_chunk
         hash.update(client_checksum)
@@ -105,32 +108,40 @@ class Client:
 
     # Cập nhật lại hàm nhận gói tin từ server
     def receive_chunk(self, index, filename):
-        while True:
-            accumulated_chunk = b''
+        count = 0
+        while not self.stop_event.is_set():
+            try:
+                accumulated_chunk = b''
 
-            header = self.sockets[index].recv(21)
-            chunk_index, chunk_size, checksum = struct.unpack('<B I 16s', header)
+                header = self.sockets[index].recv(21)
+                chunk_index, chunk_size, checksum = struct.unpack('<B I 16s', header)
 
-            remaining = chunk_size
+                remaining = chunk_size
 
-            while remaining > 0:
-                # chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
-                chunk = self.sockets[index].recv(remaining) # Use this for production
-                if not chunk:
+                while remaining > 0:
+                    chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
+                    # chunk = self.sockets[index].recv(remaining) # Use this for production
+                    if not chunk:
+                        break
+                    accumulated_chunk += chunk
+                    remaining -= len(chunk)
+                    with threading.Lock():
+                        self.progresses[index] = (chunk_size - remaining) / chunk_size * 100
+                    self.print_progress()
+
+                if self.is_corrupt(checksum, accumulated_chunk):
+                    self.sockets[index].send(f"getchunk {chunk_index}\n".encode())
+                    count += 1
+                    continue
+                else:
+                    with open(f"{filename}.chk{index}", "wb") as f:
+                        f.write(accumulated_chunk)
                     break
-                accumulated_chunk += chunk
-                remaining -= len(chunk)
-                with threading.Lock():
-                    self.progresses[index] = (chunk_size - remaining) / chunk_size * 100
-                self.print_progress()
-
-            if self.check_corrupt(checksum, accumulated_chunk):
-                self.sockets[index].send(f"getchunk {chunk_index}".encode())
-                continue
-            else:
-                with open(f"{filename}.chk{index}", "wb") as f:
-                    f.write(accumulated_chunk)
-                break
+            except Exception as e:
+                if isinstance(e, KeyboardInterrupt):
+                    self.stop_event.set()
+                else:
+                    continue
 
     def receive_file(self, filename):
         try:
@@ -140,9 +151,12 @@ class Client:
                 thread.start()
                 threads.append(thread)
 
-            for thread in threads:
-                thread.join()
-
+            try:
+                for thread in threads:
+                    thread.join()
+            except KeyboardInterrupt:
+                self.stop_event.set()
+            
             # Join the received temporary files
             with open(f"{filename}", "wb") as file:
                 for i in range(4):
@@ -156,14 +170,13 @@ class Client:
             print(f"\n{filename} is downloaded.")
 
             # Send ACK to the server
-            self.sockets[0].send("ACK".encode())
+            self.sockets[0].send("ACK\n".encode())
 
         except KeyboardInterrupt:
-            print("\nClient is shutting down...")
-            self.exit()
+            self.stop_event.set()
 
     def exit(self):
         self.sockets[0].send("exit".encode()) # Send exit command to the server
         for client_socket in self.sockets:
             client_socket.close()
-        print("Client has been deleted")
+        print("Client is shutting down...")
