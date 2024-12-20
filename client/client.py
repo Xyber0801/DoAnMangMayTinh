@@ -148,7 +148,8 @@ class Client:
                     count += 1
                     continue
                 else:
-                    with open(f"{filename}.chk{index}", "wb") as f:
+                    os.makedirs("./received", exist_ok=True)
+                    with open(f"./received/{filename}.chk{index}", "wb") as f:
                         f.write(accumulated_chunk)
                     break
             except Exception as e:
@@ -172,14 +173,14 @@ class Client:
                 self.stop_event.set()
             
             # Join the received temporary files
-            with open(f"{filename}", "wb") as file:
+            with open(f"./received/{filename}", "wb") as file:
                 for i in range(4):
-                    with open(f"{filename}.chk{i}", "rb") as part_file:
+                    with open(f"./received/{filename}.chk{i}", "rb") as part_file:
                         file.write(part_file.read())
 
             # Remove the temporary files
             for i in range(4):
-                os.remove(f"{filename}.chk{i}")
+                os.remove(f"./received/{filename}.chk{i}")
 
             print(f"\n{filename} is downloaded.")
 

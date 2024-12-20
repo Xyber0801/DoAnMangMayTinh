@@ -79,7 +79,7 @@ class Server:
                     requested_file = None
                     if data.startswith("get "):
                         requested_file = data.split()[1]
-                        print(f"Client {client.id} requested file: {data}")
+                        print(f"Client {client.id} requested file: {requested_file}")
                 
                     with open(f'files/{requested_file}', 'rb') as file:
                         file_size = len(file.read())

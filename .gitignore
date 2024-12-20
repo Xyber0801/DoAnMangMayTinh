@@ -166,3 +166,4 @@ cython_debug/
 list.txt
 input.txt
 server/files
+client/received
