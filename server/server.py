@@ -27,7 +27,7 @@ class Server:
         try:
             client_socket, address = self.socket.accept()
             id = int(client_socket.recv(1024).decode()) # Receive the id of the client
-            print(f"Connection from {address} has been established with id: {id}!")
+            # print(f"Connection from {address} has been established with id: {id}!")
             
             for _client in self.clients:
                 if _client.id == id:
@@ -38,8 +38,7 @@ class Server:
             self.add_client(client.Client(id, [client_socket]))
         
         except KeyboardInterrupt:
-            del self
-            raise KeyboardInterrupt
+            self.stop_event.set()
 
     def add_client(self, client):
         self.clients.append(client)
@@ -57,7 +56,6 @@ class Server:
 
         return header + payload
 
-
     def handle_client(self, client):
         client.being_handled = True # Prevent other threads from handling the same client
 
@@ -72,8 +70,6 @@ class Server:
                     if not data:
                         continue
 
-                    print(f"(out)received '{data}'") # debug
-
                     if data == "exit":
                         print(f"Client {client.id} has disconnected!")
                         self.clients.remove(client)
@@ -84,8 +80,8 @@ class Server:
                     if data.startswith("get "):
                         requested_file = data.split()[1]
                         print(f"Client {client.id} requested file: {data}")
-
-                    with open(f'{requested_file}', 'rb') as file:
+                
+                    with open(f'files/{requested_file}', 'rb') as file:
                         file_size = len(file.read())
                         chunk_size = file_size // self.sockets_per_client
                         file.seek(0)
@@ -95,8 +91,6 @@ class Server:
                             chunk = file.read(chunk_size)
                             packet = self.create_packet(i, chunk)
                             packets.append(packet)
-                        
-                        # client.sockets[0].send(str(chunk_size).encode()) # Send chunk size to the client
 
                         threads = [] # List of threads, each thread sends a chunk to a client
                         for i in range(len(client.sockets)):
@@ -119,7 +113,6 @@ class Server:
                                 data = client_socket.recv(1024).decode().rstrip('\n')  # Receive filename or exit command
                                 if not data:
                                     continue
-                                print(f"received '{data}'") # debug
 
                                 if data == "exit":
                                     print(f"Client {client.id} has disconnected!")

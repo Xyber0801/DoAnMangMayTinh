@@ -14,7 +14,7 @@ class Client:
         self.id = random.randrange(0, 1000000)
         self.progresses = [0] * 4 # Progresses of each download thread
         self.chunk_size = 0
-        self.received_list_of_files = False
+        self.files_available_for_download = []
         self.file_queue = []
 
         self.lock = threading.Lock()
@@ -24,19 +24,18 @@ class Client:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect(server_addr)
             self.sockets.append(client_socket)
-            # print(f"Connected to server with id: {self.id}")
 
         #send the id to the server
         for _socket in self.sockets:
             _socket.send(str(self.id).encode())
 
-    def get_download_file_list(self, file_path):
+    def parse_input_file(self, path):
         interval = 5;
         run = True;
         readFilesCount = 0;
         while not self.stop_event.is_set():
             try:
-                with open(file_path, "r") as file:
+                with open(path, "r") as file:
                     for i in range(readFilesCount):
                         file.readline();
                     while file_name := file.readline():
@@ -60,6 +59,16 @@ class Client:
                 self.stop_event.set()
                 
 
+    def parse_file_list(self, data):
+        files = []
+        lines = data.split("\n")
+        for line in lines:
+            if line.strip():
+                parts = line.split()
+                filename = parts[0]
+                files.append(filename)
+        return files
+
     def receive_list_of_files(self):
         # Loop through the sockets and receive the list of files (only one socket will receive the list)
         for _socket in self.sockets:
@@ -67,12 +76,14 @@ class Client:
             if not data:
                 continue
             print(f"List of files available for download:\n{data}")
-            self.received_list_of_files = True
+            print("------------------------------------------")
+            self.files_available_for_download = self.parse_file_list(data)
             break
 
-    def print_progress(self):
+    def print_progress(self, filename):
         with self.lock:
             sys.stdout.write("\r")  # Move the cursor to the beginning of the line
+            sys.stdout.write(f"Downloading {filename}: ")
             for i in range(self.socket_count):
                 sys.stdout.write(f"Thread {i}: {self.progresses[i]:.2f}%  ")
             sys.stdout.flush()
@@ -84,6 +95,9 @@ class Client:
                     continue
 
                 file_name = self.file_queue.pop(0)
+                if (not file_name in self.files_available_for_download):
+                    print(f"{file_name} is not available for download.")
+                    continue
                 self.send_file_request(file_name)
                 self.receive_file(file_name)
 
@@ -95,7 +109,7 @@ class Client:
 
 
     def send_file_request(self, filename):
-        print(f"Requesting file: {filename}")
+        # print(f"Requesting file: {filename}")
         self.sockets[0].sendall(f"get {filename}\n".encode())
 
     # Kiểm tra lỗi gói tin
@@ -127,7 +141,7 @@ class Client:
                     remaining -= len(chunk)
                     with threading.Lock():
                         self.progresses[index] = (chunk_size - remaining) / chunk_size * 100
-                    self.print_progress()
+                    self.print_progress(filename)
 
                 if self.is_corrupt(checksum, accumulated_chunk):
                     self.sockets[index].send(f"getchunk {chunk_index}\n".encode())

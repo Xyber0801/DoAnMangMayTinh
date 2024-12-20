@@ -9,11 +9,11 @@ def __main__():
     except Exception as e:
         _client =  client.Client(server_addr = ('localhost', 12345))
         
-    while not _client.received_list_of_files:
+    while len(_client.files_available_for_download) == 0:
         _client.receive_list_of_files()
 
     # Start a thread to read input file
-    read_input_thread = threading.Thread(target = _client.get_download_file_list, args = ('input.txt', ))
+    read_input_thread = threading.Thread(target = _client.parse_input_file, args = ('input.txt', ))
     read_input_thread.start()
 
     download_thread = threading.Thread(target = _client.download_files)
