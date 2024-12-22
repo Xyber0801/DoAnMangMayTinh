@@ -6,7 +6,7 @@ import hashlib
 import select
 
 class Server:
-    def __init__(self, ip = 'localhost', port = 54321, max_clients_num = 100, sockets_per_client = 4):
+    def __init__(self, ip = '0.0.0.0', port = 54321, max_clients_num = 100, sockets_per_client = 4):
         self.max_clients_num = max_clients_num
         self.sockets_per_client = sockets_per_client
         self.clients = []
@@ -19,15 +19,20 @@ class Server:
         print(f"Server is listening for connections on port {port}")
 
     def send_list_of_files(self, client_socket):
-        with open("list.txt", "r") as f:
-            data = f.read()
-            client_socket.send(data.encode())
+        try:
+            with open("list.txt", "r", encoding="utf-8") as f:
+                data = f.read()
+            client_socket.send(data.encode("utf-8"))
+        except UnicodeEncodeError:
+            with open("list.txt", "r", encoding="latin-1") as f:
+                data = f.read()
+            client_socket.send(data.encode("latin-1"))
 
     def accept_connections(self):
         try:
             client_socket, address = self.socket.accept()
             id = int(client_socket.recv(1024).decode()) # Receive the id of the client
-            # print(f"Connection from {address} has been established with id: {id}!")
+            print(f"Connection from {address} has been established with id: {id}!")
             
             for _client in self.clients:
                 if _client.id == id:
