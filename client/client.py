@@ -65,7 +65,7 @@ class Client:
         for line in lines:
             if line.strip():
                 parts = line.split()
-                filename = parts[0]
+                filename = " ".join(parts[:-1])
                 files.append(filename)
         return files
 
@@ -149,7 +149,7 @@ class Client:
                     continue
                 else:
                     os.makedirs("./received", exist_ok=True)
-                    with open(f"./received/{filename}.chk{index}", "wb") as f:
+                    with open(f"./received/{filename}.chk{chunk_index}", "wb") as f:
                         f.write(accumulated_chunk)
                     break
             except Exception as e:

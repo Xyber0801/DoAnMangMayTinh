@@ -3,11 +3,11 @@ import threading
 import time
 
 def __main__():
-    global _client
+    server_ip = '192.168.1.6'
     try:
-        _client =  client.Client(server_addr = ('localhost', 54321))
+        _client =  client.Client(server_addr = (server_ip, 54321))
     except Exception as e:
-        _client =  client.Client(server_addr = ('localhost', 12345))
+        _client =  client.Client(server_addr = (server_ip, 12345))
         
     while len(_client.files_available_for_download) == 0:
         _client.receive_list_of_files()
