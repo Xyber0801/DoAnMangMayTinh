@@ -3,7 +3,7 @@ import threading
 import time
 
 def __main__():
-    server_ip = '192.168.1.6'
+    server_ip = 'localhost'
     try:
         _client =  client.Client(server_addr = (server_ip, 54321))
     except Exception as e:

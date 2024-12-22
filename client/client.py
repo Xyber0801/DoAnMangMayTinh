@@ -43,9 +43,6 @@ class Client:
                         file_name = file_name.rstrip("\n")
                         self.file_queue.append(file_name);
                         print(f"Added {file_name} to the queue")
-                        if (file_name == "\close\n"):
-                            run = False;
-                            break;
                     file.close();
                     
                 if (run == False):
@@ -122,7 +119,6 @@ class Client:
 
     # Cập nhật lại hàm nhận gói tin từ server
     def receive_chunk(self, index, filename):
-        count = 0
         while not self.stop_event.is_set():
             try:
                 accumulated_chunk = b''
@@ -133,7 +129,7 @@ class Client:
                 remaining = chunk_size
 
                 while remaining > 0:
-                    # chunk = self.sockets[index].recv(min(1024, remaining)) # Use this for testing(basically limiting the bandwidth)
+                    # chunk = self.sockets[index].recv(min(50000, remaining)) # Use this for testing(basically limiting the bandwidth)
                     chunk = self.sockets[index].recv(remaining) # Use this for production
                     if not chunk:
                         break
@@ -145,7 +141,6 @@ class Client:
 
                 if self.is_corrupt(checksum, accumulated_chunk):
                     self.sockets[index].send(f"getchunk {chunk_index}\n".encode())
-                    count += 1
                     continue
                 else:
                     os.makedirs("./received", exist_ok=True)
