@@ -33,9 +33,10 @@ class Client:
         interval = 5;
         run = True;
         readFilesCount = 0;
+        file_encoding = 'utf8';
         while not self.stop_event.is_set():
             try:
-                with open(path, "r") as file:
+                with open(path, "r", encoding=file_encoding) as file:
                     for i in range(readFilesCount):
                         file.readline();
                     while file_name := file.readline():
@@ -54,6 +55,8 @@ class Client:
                     time.sleep(0.1);
             except KeyboardInterrupt:
                 self.stop_event.set()
+            except UnicodeEncodeError:
+                file_encoding = 'latin-1';
                 
 
     def parse_file_list(self, data):
@@ -87,7 +90,7 @@ class Client:
 
     def download_files(self):
         while not self.stop_event.is_set():
-            try:    
+            try:
                 if len(self.file_queue) == 0:
                     continue
 
